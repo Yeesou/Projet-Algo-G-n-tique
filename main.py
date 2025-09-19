@@ -1,6 +1,8 @@
 from Groupes import Groupes
 import time
 
+DURATION = 5
+
 cities = 100
 indiv_length = cities * 5
 tournament_size = indiv_length // 10
@@ -17,7 +19,7 @@ fitness_checkpoint = []
 start = time.time()
 i = 0
 
-while time.time() - start < 5:  # Exécuter pendant 5 secondes
+while time.time() - start < DURATION:
     enfant1, enfant2 = France.croisement(method='pmx')
     if i % 100 == 0:
         print("Itération:", i)

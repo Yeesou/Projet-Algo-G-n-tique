@@ -54,6 +54,45 @@ class Individu:
             self.chemin[i+1:j+1] = reversed(self.chemin[i+1:j+1])
             self.calc_total_distance()
             self.fitness = 1 / float(self.total_distance)
+        
+    def mutation_2opt_alternative(self) -> None:
+        n = len(self.chemin)
+        # Parcourt des paires d’arêtes : i est le début de la 1re arête, j celui de la 2e
+        best_delta = 0.0
+        swap_indices = None
+
+        # Pour éviter de prendre deux arrêtes adjacentes
+        for i in range(n - 2):
+            for j in range(i + 2, n):
+                # Arêtes considérées : (i, i+1) et (j, (j+1) % n)
+                a, b = self.chemin[i], self.chemin[(i + 1) % n]
+                c, d = self.chemin[j], self.chemin[(j + 1) % n]
+
+                # Coût actuel de ces deux arêtes
+                current_cost = self.group.distance_between(a, b) + self.group.distance_between(c, d)
+
+                # Nouveau coût si l’on inverse le segment
+                new_cost = self.group.distance_between(a, c) + self.group.distance_between(b, d)
+
+                delta = new_cost - current_cost
+                if delta < best_delta:
+                    best_delta = delta
+                    swap_indices = (i + 1, j)
+                    # On s’arrête dès la première amélioration trouvée
+                    break
+            if swap_indices is not None:
+                break
+
+        # Applique la meilleure amélioration trouvée, s’il y en a une
+        if swap_indices is not None:
+            i, j = swap_indices
+            # Inverse le segment entre les positions i et j (incluses)
+            segment = self.chemin[i : j + 1]
+            self.chemin[i : j + 1] = segment[::-1]
+
+            # Recalcule la distance totale et met à jour la fitness
+            self.calc_total_distance()
+            self.fitness = 1 / float(self.total_distance)
     
     def mutation_3opt(self):
         n = len(self.chemin)

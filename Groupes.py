@@ -1,3 +1,4 @@
+from copy import deepcopy
 import random
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,6 +16,13 @@ class Groupes:
         self.mutation_rate = mutation_rate
         self.villes = {}
         self.individus = []
+
+    def copy(self):
+        clone = Groupes(self.l, self.k, mutation_rate=self.mutation_rate)
+        clone.villes = deepcopy(self.villes)
+        clone.individus = []
+        clone.generate_individus()
+        return clone
 
     def add_Ville(self, nom, coord):
         self.villes[nom] = coord
@@ -230,7 +238,7 @@ class Groupes:
         
         return enfant1, enfant2
 
-    def croisement(self, method='ox', mutation='feur'):
+    def croisement(self, method='ox', mutation='2-opt'):
         """Effectue le croisement entre deux individus"""
         parent1 = self.select_tournament()
         parent2 = self.select_tournament()
@@ -253,11 +261,23 @@ class Groupes:
         enfant1 = Individu(self, enfant1)
         enfant2 = Individu(self, enfant2)
 
-        # mutation 
+        # mutation
         if np.random.rand() < self.mutation_rate:
-            enfant1.mutation_2opt()
+            match mutation:
+                case '2-opt':
+                    enfant1.mutation_2opt()
+                case '2-opt alt':
+                    enfant1.mutation_2opt_alternative()
+                case '3-opt':
+                    enfant1.mutation_3opt()
         if np.random.rand() < self.mutation_rate:
-            enfant2.mutation_2opt()
+            match mutation:
+                case '2-opt':
+                    enfant2.mutation_2opt()
+                case '2-opt alt':
+                    enfant2.mutation_2opt_alternative()
+                case '3-opt':
+                    enfant2.mutation_3opt()
 
         if not any(enfant1.egal(i) for i in self.individus):
             self.individus.append(enfant1)
@@ -281,7 +301,7 @@ class Groupes:
             coord = [0.5 + 0.4 * np.cos(angle), 0.5 + 0.4 * np.sin(angle)]
             self.add_Ville(nom, coord)
     
-    def plot_result(self, meilleur_individu, title="Meilleur chemin trouvé"):
+    def plot_result(self, meilleur_individu, title="Meilleur chemin trouvé", display=True):
         """Affiche la carte 2D avec les villes et le meilleur chemin"""
         plt.figure(figsize=(10, 8))
         
@@ -321,9 +341,9 @@ class Groupes:
         plt.legend()
         plt.axis('equal')
         plt.tight_layout()
-        plt.show()
+        if display: plt.show()
     
-    def plot_evolution(self, fitness_history):
+    def plot_evolution(self, fitness_history, display=True):
         """Affiche l'évolution de la fitness au cours des générations"""
         plt.figure(figsize=(10, 6))
         plt.plot(fitness_history, 'b-', linewidth=2)
@@ -332,7 +352,7 @@ class Groupes:
         plt.ylabel('Meilleure fitness', fontsize=12)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.show()
+        if display: plt.show()
     
 
     def animate_evolution(self, generations=5000, method='ox'):
