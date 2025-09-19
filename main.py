@@ -3,7 +3,7 @@ from Groupes import Groupes
 cities = 50
 indiv_length = cities * 5
 tournament_size = indiv_length // 10
-mutation_rate = .9
+mutation_rate = 1
 
 France = Groupes(indiv_length, tournament_size, mutation_rate=mutation_rate)
 
@@ -13,7 +13,7 @@ France.generate_individus()
 
 fitness_checkpoint = []
 
-for i in range(5000):
+for i in range(cities*200):
     enfant1, enfant2 = France.croisement()
     if i % 100 == 0:
         print("Generation", i, "Best fitness:", max(indiv.fitness for indiv in France.individus))

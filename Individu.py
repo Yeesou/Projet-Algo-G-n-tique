@@ -93,14 +93,21 @@ class Individu:
         
         # Liste des reconnections possibles
         reconnections = [
-            (dist_ac + dist_bd + dist_ef, [(i + 1, j)]),  # Reconnect (a,c) and (b,d)
-            (dist_ab + dist_ce + dist_df, [(j + 1, k)]),  # Reconnect (c,e) and (d,f)
-            (dist_ae + dist_bf + dist_cd, [(i + 1, k)]),  # Reconnect (a,e) and (b,f)
-            (dist_ac + dist_ce + dist_bd + dist_df - dist_ab - dist_cd - dist_ef, [(i + 1, j), (j + 1, k)]),  # Double reconnection
-            (dist_ae + dist_ac + dist_bd + dist_df - dist_ab - dist_cd - dist_ef, [(i + 1, k), (j + 1, k)]),  # Double reconnection
-            (dist_ae + dist_bf + dist_ac + dist_bd - dist_ab - dist_cd - dist_ef, [(i + 1, j), (i + 1, k)]),  # Double reconnection
+            (dist_ac + dist_bd + dist_ef, [(i + 1, j)]),
+            (dist_ab + dist_ce + dist_df, [(j + 1, k)]),
+            (dist_ae + dist_bf + dist_cd, [(i + 1, k)]),
+            (dist_ac + dist_ce + dist_bd + dist_df - dist_ab - dist_cd - dist_ef, [(i + 1, j), (j + 1, k)]),
+            (dist_ae + dist_ac + dist_bd + dist_df - dist_ab - dist_cd - dist_ef, [(i + 1, k), (j + 1, k)]),
+            (dist_ae + dist_bf + dist_ac + dist_bd - dist_ab - dist_cd - dist_ef, [(i + 1, j), (i + 1, k)]),
         ]
         
-    
+        # Appliquer la meilleure reconnexion
+        if reconnections:
+            best = min(reconnections, key=lambda x: x[0])
+            for (start, end) in best[1]:
+                self.chemin[start:end] = reversed(self.chemin[start:end])
+            self.calc_total_distance()
+            self.fitness = 1 / float(self.total_distance)
+
     def egal(self, other):
         return self.chemin == other.chemin

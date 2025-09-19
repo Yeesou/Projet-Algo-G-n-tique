@@ -48,12 +48,108 @@ class Groupes:
         selected.sort(key=lambda indiv: indiv.fitness, reverse=True)
         return selected[0]
     
-    def croisement(self):
-        parent1 = self.select_tournament()
-        parent2 = self.select_tournament()
-        while parent1.egal(parent2):
-            parent2 = self.select_tournament()
+    def pmx(self, parent1, parent2):
+        n = len(parent1)
+        cut1, cut2 = sorted(random.sample(range(n), 2))
 
+        child1, child2 = [None]*n, [None]*n
+
+        # copier le segment
+        child1[cut1:cut2] = parent1[cut1:cut2]
+        child2[cut1:cut2] = parent2[cut1:cut2]
+
+        # créer les correspondances
+        mapping1 = {parent2[i]: parent1[i] for i in range(cut1, cut2)}
+        mapping2 = {parent1[i]: parent2[i] for i in range(cut1, cut2)}
+
+        def fill(child, parent, mapping):
+            for i in range(n):
+                if child[i] is None:
+                    val = parent[i]
+                    while val in mapping:
+                        val = mapping[val]
+                    child[i] = val
+            return child
+
+        return fill(child1, parent2, mapping1), fill(child2, parent1, mapping2)
+    
+    def cx(self, parent1, parent2):
+        n = len(parent1)
+        child1, child2 = [None]*n, [None]*n
+        visited = [False]*n
+        start = 0
+
+        while not all(visited):
+            idx = start
+            while not visited[idx]:
+                child1[idx] = parent1[idx]
+                child2[idx] = parent2[idx]
+                visited[idx] = True
+                idx = parent1.index(parent2[idx])
+
+            if not all(visited):
+                start = visited.index(False)
+                idx = start
+                while not visited[idx]:
+                    child1[idx] = parent2[idx]
+                    child2[idx] = parent1[idx]
+                    visited[idx] = True
+                    idx = parent1.index(parent2[idx])
+
+        return child1, child2
+    
+    def erx(self, parent1, parent2):
+        def build_edge_map(p1, p2):
+            edges = {c: set() for c in p1}
+            for p in [p1, p2]:
+                for i in range(len(p)):
+                    left, right = p[i-1], p[(i+1) % len(p)]
+                    edges[p[i]].update([left, right])
+            return edges
+
+        def make_child(edges):
+            child = []
+            current = random.choice(list(edges.keys()))
+            while len(child) < len(edges):
+                child.append(current)
+                for e in edges.values():
+                    e.discard(current)
+                if edges[current]:
+                    current = min(edges[current], key=lambda x: len(edges[x]))
+                else:
+                    remaining = [c for c in edges if c not in child]
+                    if remaining:
+                        current = random.choice(remaining)
+            return child
+
+        edges = build_edge_map(parent1, parent2)
+        return make_child(edges), make_child(edges)
+
+    def hx(parent1, parent2, distance_matrix):
+        n = len(parent1)
+        def make_child():
+            child = []
+            current = random.choice(parent1)
+            while len(child) < n:
+                child.append(current)
+                candidates = []
+                for p in [parent1, parent2]:
+                    idx = p.index(current)
+                    next_city = p[(idx + 1) % n]
+                    if next_city not in child:
+                        candidates.append(next_city)
+                if candidates:
+                    current = min(candidates, key=lambda c: distance_matrix[current][c])
+                else:
+                    remaining = [c for c in parent1 if c not in child]
+                    if remaining:
+                        current = random.choice(remaining)
+            return child
+
+        return make_child(), make_child()
+
+    
+    def ox(self, parent1, parent2):
         n = len(self.villes)
         cut1, cut2 = sorted(random.sample(range(n), 2))
 
@@ -62,8 +158,8 @@ class Groupes:
         enfant2 = [None] * n
 
         # 2. échange des segments
-        enfant1[cut1:cut2+1] = parent2.chemin[cut1:cut2+1]
-        enfant2[cut1:cut2+1] = parent1.chemin[cut1:cut2+1]
+        enfant1[cut1:cut2+1] = parent2[cut1:cut2+1]
+        enfant2[cut1:cut2+1] = parent1[cut1:cut2+1]
 
         # 3. remplir tout en évitant les duplications (laisser a null)
         segment1 = set(enfant1[cut1:cut2+1])
@@ -71,10 +167,10 @@ class Groupes:
 
         for i in range(n):
             if not (cut1 <= i <= cut2):
-                if parent1.chemin[i] not in segment1:
-                    enfant1[i] = parent1.chemin[i]
-                if parent2.chemin[i] not in segment2:
-                    enfant2[i] = parent2.chemin[i]
+                if parent1[i] not in segment1:
+                    enfant1[i] = parent1[i]
+                if parent2[i] not in segment2:
+                    enfant2[i] = parent2[i]
 
         # 4. villes manquantes
         missing1 = [v for v in self.villes if v not in enfant1]
@@ -89,29 +185,39 @@ class Groupes:
                 enfant1[i] = missing1.pop()
             if enfant2[i] is None:
                 enfant2[i] = missing2.pop()
+        
+        return enfant1, enfant2
 
-        # création des individus
-        indiv1, indiv2 = Individu(self, enfant1), Individu(self, enfant2)
+    def croisement(self):
+        """Effectue le croisement entre deux individus"""
+        parent1 = self.select_tournament()
+        parent2 = self.select_tournament()
+        while parent1.egal(parent2):
+            parent2 = self.select_tournament()
+
+        enfant1, enfant2 = self.ox(parent1.chemin, parent2.chemin)
+
+        enfant1 = Individu(self, enfant1)
+        enfant2 = Individu(self, enfant2)
 
         # mutation 
         if np.random.rand() < self.mutation_rate:
-            indiv1.mutation_2opt()
+            enfant1.mutation_2opt()
         if np.random.rand() < self.mutation_rate:
-            indiv2.mutation_2opt()
+            enfant2.mutation_2opt()
 
-        if not any(indiv1.egal(i) for i in self.individus):
-            self.individus.append(indiv1)
-            
-        if not any(indiv2.egal(i) for i in self.individus):
-            self.individus.append(indiv2)
-        
+        if not any(enfant1.egal(i) for i in self.individus):
+            self.individus.append(enfant1)
+
+        if not any(enfant2.egal(i) for i in self.individus):
+            self.individus.append(enfant2)
+
         if (self.l != len(self.individus)):
             for i in range(len(self.individus) - self.l ):
                 self.individus.pop(self.individus.index(min(self.individus, key=lambda indiv: indiv.fitness)))
-
         
-        return indiv1, indiv2
-
+        return enfant1, enfant2
+    
     def generate_circle_city(self, size):
         self.villes = {}
         self.individus = []
