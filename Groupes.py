@@ -3,6 +3,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import util
 
 from Individu import Individu
 
@@ -46,7 +47,7 @@ class Groupes:
     def generate_random_city(self, size):
         self.villes = {}
         self.individus = []
-        noms_villes = [chr(i) for i in range(65, 65 + size)]
+        noms_villes = util.gen_names(size)
         for nom in noms_villes:
             coord = [np.random.rand(), np.random.rand()]
             self.add_Ville(nom, coord)
@@ -323,7 +324,9 @@ class Groupes:
             case 'hx':
                 distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in self.villes} for v1 in self.villes}
                 enfant1, enfant2 = self.hx(parent1.chemin, parent2.chemin, distance_matrix)
-
+            case 'hx extended':
+                distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in self.villes} for v1 in self.villes}
+                enfant1, enfant2 = self.hx_extended(parent1.chemin, parent2.chemin, distance_matrix)
         enfant1 = Individu(self, enfant1)
         enfant2 = Individu(self, enfant2)
 
@@ -420,12 +423,7 @@ class Groupes:
         plt.tight_layout()
         if display: plt.show()
     
-
-    def animate_evolution(self, generations=5000, method='ox'):
-        """Crée une animation qui capture seulement quand le meilleur chemin change"""
-        
-    
-    def animate_evolution(self, generations=5000, method='ox', interval=300, pause_ms=2000, repeat=True):
+    def animate_evolution(self, generations=5000, method='ox', mutation='2opt', interval=300, pause_ms=2000, repeat=True):
         # Réinitialiser la population
         self.individus = []
         self.generate_individus()
@@ -436,7 +434,7 @@ class Groupes:
         
         # Évolution et collecte des données
         for generation in range(generations):
-            self.croisement(method=method)
+            self.croisement(method=method, mutation=mutation)
             meilleur_actuel = max(self.individus, key=lambda indiv: indiv.fitness)
             
             # Vérifier si le meilleur chemin a changé
