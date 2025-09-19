@@ -48,30 +48,53 @@ class Groupes:
         selected.sort(key=lambda indiv: indiv.fitness, reverse=True)
         return selected[0]
     
-    def pmx(self, parent1, parent2):
+    def pmx(self, parent1, parent2, cut_points=None):
         n = len(parent1)
-        cut1, cut2 = sorted(random.sample(range(n), 2))
+        if cut_points is None:
+            c1, c2 = sorted(random.sample(range(n), 2))
+        else:
+            c1, c2 = cut_points
 
-        child1, child2 = [None]*n, [None]*n
+        child1, child2 = [None] * n, [None] * n
 
-        # copier le segment
-        child1[cut1:cut2] = parent1[cut1:cut2]
-        child2[cut1:cut2] = parent2[cut1:cut2]
+        # Pré-calcul des positions pour accès O(1)
+        pos1 = {gene: i for i, gene in enumerate(parent1)}
+        pos2 = {gene: i for i, gene in enumerate(parent2)}
 
-        # créer les correspondances
-        mapping1 = {parent2[i]: parent1[i] for i in range(cut1, cut2)}
-        mapping2 = {parent1[i]: parent2[i] for i in range(cut1, cut2)}
+        # 1) Copier les segments centraux (demi-ouvert: [c1, c2))
+        child1[c1:c2] = parent1[c1:c2]
+        child2[c1:c2] = parent2[c1:c2]
 
-        def fill(child, parent, mapping):
-            for i in range(n):
-                if child[i] is None:
-                    val = parent[i]
-                    while val in mapping:
-                        val = mapping[val]
-                    child[i] = val
-            return child
+        # 2) Compléter via les correspondances de positions
+        # Pour child1, on injecte les gènes du segment de parent2 aux bonnes positions
+        for i in range(c1, c2):
+            gene = parent2[i]
+            if gene not in child1:
+                pos = i
+                # Trouver une case libre en suivant les images positionnelles
+                while child1[pos] is not None:
+                    mapped_gene = parent1[pos]
+                    pos = pos2[mapped_gene]
+                child1[pos] = gene
 
-        return fill(child1, parent2, mapping1), fill(child2, parent1, mapping2)
+        # Pour child2, symétriquement
+        for i in range(c1, c2):
+            gene = parent1[i]
+            if gene not in child2:
+                pos = i
+                while child2[pos] is not None:
+                    mapped_gene = parent2[pos]
+                    pos = pos1[mapped_gene]
+                child2[pos] = gene
+
+        # 3) Remplir les emplacements restants avec l'autre parent en conservant l'ordre
+        for i in range(n):
+            if child1[i] is None:
+                child1[i] = parent2[i]
+            if child2[i] is None:
+                child2[i] = parent1[i]
+
+        return child1, child2
     
     def cx(self, parent1, parent2):
         n = len(parent1)
@@ -123,27 +146,46 @@ class Groupes:
             return child
 
         edges = build_edge_map(parent1, parent2)
-        return make_child(edges), make_child(edges)
+        # Utiliser une copie des arêtes pour chaque enfant afin d'éviter les effets de bord
+        edges_copy = {k: set(v) for k, v in edges.items()}
+        return make_child(edges), make_child(edges_copy)
 
-    def hx(parent1, parent2, distance_matrix):
+    def hx(self, parent1, parent2, distance_matrix):
         n = len(parent1)
+
+        # Pré-calcul des positions pour accès O(1)
+        pos1 = {city: i for i, city in enumerate(parent1)}
+        pos2 = {city: i for i, city in enumerate(parent2)}
+
+        def nearest_from(current, candidates):
+            return min(candidates, key=lambda c: distance_matrix[current][c])
+
         def make_child():
             child = []
+            used = set()
             current = random.choice(parent1)
             while len(child) < n:
                 child.append(current)
-                candidates = []
-                for p in [parent1, parent2]:
-                    idx = p.index(current)
-                    next_city = p[(idx + 1) % n]
-                    if next_city not in child:
-                        candidates.append(next_city)
-                if candidates:
-                    current = min(candidates, key=lambda c: distance_matrix[current][c])
+                used.add(current)
+
+                # Collecter voisins (prev et next) des deux parents
+                cand = []
+                i1 = pos1[current]
+                i2 = pos2[current]
+                neighs = [
+                    parent1[(i1 - 1) % n], parent1[(i1 + 1) % n],
+                    parent2[(i2 - 1) % n], parent2[(i2 + 1) % n],
+                ]
+                for v in neighs:
+                    if v not in used:
+                        cand.append(v)
+
+                if cand:
+                    current = nearest_from(current, cand)
                 else:
-                    remaining = [c for c in parent1 if c not in child]
+                    remaining = [c for c in parent1 if c not in used]
                     if remaining:
-                        current = random.choice(remaining)
+                        current = nearest_from(current, remaining)
             return child
 
         return make_child(), make_child()
@@ -188,14 +230,25 @@ class Groupes:
         
         return enfant1, enfant2
 
-    def croisement(self):
+    def croisement(self, method='ox', mutation='feur'):
         """Effectue le croisement entre deux individus"""
         parent1 = self.select_tournament()
         parent2 = self.select_tournament()
         while parent1.egal(parent2):
             parent2 = self.select_tournament()
 
-        enfant1, enfant2 = self.ox(parent1.chemin, parent2.chemin)
+        match method:
+            case 'pmx':
+                enfant1, enfant2 = self.pmx(parent1.chemin, parent2.chemin)
+            case 'cx':
+                enfant1, enfant2 = self.cx(parent1.chemin, parent2.chemin)
+            case 'erx':
+                enfant1, enfant2 = self.erx(parent1.chemin, parent2.chemin)
+            case 'ox':
+                enfant1, enfant2 = self.ox(parent1.chemin, parent2.chemin)
+            case 'hx':
+                distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in self.villes} for v1 in self.villes}
+                enfant1, enfant2 = self.hx(parent1.chemin, parent2.chemin, distance_matrix)
 
         enfant1 = Individu(self, enfant1)
         enfant2 = Individu(self, enfant2)
@@ -282,7 +335,7 @@ class Groupes:
         plt.show()
     
 
-    def animate_evolution(self, generations=5000):
+    def animate_evolution(self, generations=5000, method='ox'):
         """Crée une animation qui capture seulement quand le meilleur chemin change"""
         
         # Réinitialiser la population
@@ -295,7 +348,7 @@ class Groupes:
         
         # Évolution et collecte des données
         for generation in range(generations):
-            self.croisement()
+            self.croisement(method=method)
             meilleur_actuel = max(self.individus, key=lambda indiv: indiv.fitness)
             
             # Vérifier si le meilleur chemin a changé
