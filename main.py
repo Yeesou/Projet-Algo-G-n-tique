@@ -1,7 +1,7 @@
 from Groupes import Groupes
 import time
 
-DURATION = 5
+DURATION = 10
 
 cities = 100
 indiv_length = cities * 5
@@ -20,7 +20,7 @@ start = time.time()
 i = 0
 
 while time.time() - start < DURATION:
-    enfant1, enfant2 = France.croisement(method='pmx')
+    enfant1, enfant2 = France.croisement(method='hx extended', mutation='2-opt alt')
     if i % 100 == 0:
         print("Iteration:", i)
         fitness_checkpoint.append(max(indiv.fitness for indiv in France.individus))

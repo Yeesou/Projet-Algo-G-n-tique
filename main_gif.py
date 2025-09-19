@@ -2,7 +2,7 @@ from Groupes import Groupes
 
 import matplotlib.pyplot as plt
 
-cities = 100
+cities = 250
 indiv_length = cities * 5
 tournament_size = indiv_length // 10
 mutation_rate = 1
@@ -13,7 +13,7 @@ France.generate_circle_city(cities)
 France.generate_individus()
 
 print("Démarrage de l'animation...")
-anim = France.animate_evolution(generations=5000, interval=5, method='hx', mutation='2-opt alt')
+anim = France.animate_evolution(generations=5000, interval=5, method='hx extended', mutation='2-opt alt', duration=20)
 
 if anim:
     plt.show()

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import util
+import time
 
 from Individu import Individu
 
@@ -106,11 +107,6 @@ class Groupes:
         return child1, child2
     
     def cx(self, parent1, parent2):
-        """Cycle Crossover (CX) standard.
-
-        Alternance de cycles: le premier cycle copie parent1→child1 (et parent2→child2),
-        le cycle suivant inverse, et ainsi de suite. Utilisation d'un mapping O(1).
-        """
         n = len(parent1)
         child1, child2 = [None] * n, [None] * n
         visited = [False] * n
@@ -169,13 +165,6 @@ class Groupes:
         return make_child(edges), make_child(edges_copy)
 
     def hx(self, parent1, parent2, distance_matrix):
-        """Heuristic Crossover (HX) selon la définition classique.
-
-        À partir d'un nœud de départ aléatoire, on considère uniquement les deux arêtes
-        sortantes données par les parents (le successeur dans chaque parent) et on choisit
-        la plus courte qui n'introduit pas de cycle (nœud déjà utilisé). Si aucune des deux
-        n'est valide, on choisit un nœud aléatoire parmi les nœuds restants.
-        """
         n = len(parent1)
 
         # Pré-calcul des positions pour accès O(1)
@@ -216,15 +205,26 @@ class Groupes:
 
         return make_child(), make_child()
 
-    def hx_extended(self, parent1, parent2, distance_matrix):
+    def hx_extended(self, parent1, parent2, distance_matrix, nearest_order):
         n = len(parent1)
 
-        # Pré-calcul des positions pour accès O(1)
+        # Pré-calcul des positions et des 4-voisins par ville
         pos1 = {city: i for i, city in enumerate(parent1)}
         pos2 = {city: i for i, city in enumerate(parent2)}
+        neighbor4 = {}
+        for city in parent1:
+            i1 = pos1[city]
+            i2 = pos2[city]
+            neighbor4[city] = (
+                parent1[(i1 - 1) % n], parent1[(i1 + 1) % n],
+                parent2[(i2 - 1) % n], parent2[(i2 + 1) % n],
+            )
 
-        def nearest_from(current, candidates):
-            return min(candidates, key=lambda c: distance_matrix[current][c])
+        def fallback_nearest(current, used):
+            for cand in nearest_order[current]:
+                if cand not in used:
+                    return cand
+            return None
 
         def make_child():
             child = []
@@ -234,39 +234,26 @@ class Groupes:
                 child.append(current)
                 used.add(current)
 
-                # Collecter voisins (prev et next) des deux parents
+                # Candidats 4-voisins non visités (dédupliqués)
                 cand = []
-                i1 = pos1[current]
-                i2 = pos2[current]
-                neighs = [
-                    parent1[(i1 - 1) % n], parent1[(i1 + 1) % n],
-                    parent2[(i2 - 1) % n], parent2[(i2 + 1) % n],
-                ]
-                for v in neighs:
-                    if v not in used:
+                seen = set()
+                for v in neighbor4[current]:
+                    if v not in used and v not in seen:
                         cand.append(v)
+                        seen.add(v)
 
                 if cand:
-                    current = nearest_from(current, cand)
+                    current = min(cand, key=lambda c: distance_matrix[current][c])
                 else:
-                    remaining = [c for c in parent1 if c not in used]
-                    if remaining:
-                        current = nearest_from(current, remaining)
+                    nxt = fallback_nearest(current, used)
+                    if nxt is None:
+                        break
+                    current = nxt
             return child
 
         return make_child(), make_child()
     
     def ox(self, parent1, parent2, cut_points=None):
-        """Order Crossover (OX) conforme à la définition classique.
-
-        - Échange le segment entre deux points de coupe (inclus)
-        - Remplit les positions restantes avec l'ordre de l'autre parent,
-          en démarrant à cut2+1 (avec wrap) et en évitant les duplications.
-
-        Paramètres:
-            parent1, parent2 (list): permutations
-            cut_points (tuple|None): (c1, c2) inclusifs. Si None, choisis aléatoirement.
-        """
         n = len(parent1)
         if cut_points is None:
             cut1, cut2 = sorted(random.sample(range(n), 2))
@@ -306,7 +293,6 @@ class Groupes:
         return enfant1, enfant2
 
     def croisement(self, method='ox', mutation='2-opt'):
-        """Effectue le croisement entre deux individus"""
         parent1 = self.select_tournament()
         parent2 = self.select_tournament()
         while parent1.egal(parent2):
@@ -325,8 +311,13 @@ class Groupes:
                 distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in self.villes} for v1 in self.villes}
                 enfant1, enfant2 = self.hx(parent1.chemin, parent2.chemin, distance_matrix)
             case 'hx extended':
-                distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in self.villes} for v1 in self.villes}
-                enfant1, enfant2 = self.hx_extended(parent1.chemin, parent2.chemin, distance_matrix)
+                cities = list(self.villes.keys())
+                distance_matrix = {v1: {v2: self.distance_between(v1, v2) for v2 in cities} for v1 in cities}
+                nearest_order = {
+                    c: [d for d in sorted(cities, key=lambda x: distance_matrix[c][x]) if d != c]
+                    for c in cities
+                }
+                enfant1, enfant2 = self.hx_extended(parent1.chemin, parent2.chemin, distance_matrix, nearest_order)
         enfant1 = Individu(self, enfant1)
         enfant2 = Individu(self, enfant2)
 
@@ -363,7 +354,7 @@ class Groupes:
     def generate_circle_city(self, size):
         self.villes = {}
         self.individus = []
-        noms_villes = [chr(i) for i in range(65, 65 + size)]
+        noms_villes = util.gen_names(size)
         angle_step = 2 * np.pi / size
         for i, nom in enumerate(noms_villes):
             angle = i * angle_step
@@ -423,7 +414,7 @@ class Groupes:
         plt.tight_layout()
         if display: plt.show()
     
-    def animate_evolution(self, generations=5000, method='ox', mutation='2opt', interval=300, pause_ms=2000, repeat=True):
+    def animate_evolution(self, generations=5000, method='ox', mutation='2opt', interval=300, pause_ms=2000, repeat=True, duration=None):
         # Réinitialiser la population
         self.individus = []
         self.generate_individus()
@@ -433,21 +424,41 @@ class Groupes:
         meilleur_precedent = None
         
         # Évolution et collecte des données
-        for generation in range(generations):
-            self.croisement(method=method, mutation=mutation)
-            meilleur_actuel = max(self.individus, key=lambda indiv: indiv.fitness)
-            
-            # Vérifier si le meilleur chemin a changé
-            if meilleur_precedent is None or not meilleur_actuel.egal(meilleur_precedent):
-                print(f"Génération {generation}: Nouveau meilleur! Distance = {meilleur_actuel.total_distance:.3f}")
+        if duration is not None:
+            start = time.time()
+            generation = 0
+            while time.time() - start < duration:
+                self.croisement(method=method, mutation=mutation)
+                meilleur_actuel = max(self.individus, key=lambda indiv: indiv.fitness)
                 
-                # Stocker les données de cette frame
-                frames_data.append({
-                    'generation': generation,
-                    'chemin': meilleur_actuel.chemin.copy(),
-                    'distance': meilleur_actuel.total_distance
-                })
-                meilleur_precedent = meilleur_actuel
+                # Vérifier si le meilleur chemin a changé
+                if meilleur_precedent is None or not meilleur_actuel.egal(meilleur_precedent):
+                    print(f"Génération {generation}: Nouveau meilleur! Distance = {meilleur_actuel.total_distance:.3f}")
+                    
+                    # Stocker les données de cette frame
+                    frames_data.append({
+                        'generation': generation,
+                        'chemin': meilleur_actuel.chemin.copy(),
+                        'distance': meilleur_actuel.total_distance
+                    })
+                    meilleur_precedent = meilleur_actuel
+                generation += 1
+        else:
+            for generation in range(generations):
+                self.croisement(method=method, mutation=mutation)
+                meilleur_actuel = max(self.individus, key=lambda indiv: indiv.fitness)
+                
+                # Vérifier si le meilleur chemin a changé
+                if meilleur_precedent is None or not meilleur_actuel.egal(meilleur_precedent):
+                    print(f"Génération {generation}: Nouveau meilleur! Distance = {meilleur_actuel.total_distance:.3f}")
+                    
+                    # Stocker les données de cette frame
+                    frames_data.append({
+                        'generation': generation,
+                        'chemin': meilleur_actuel.chemin.copy(),
+                        'distance': meilleur_actuel.total_distance
+                    })
+                    meilleur_precedent = meilleur_actuel
         
         # Créer l'animation après avoir collecté toutes les données
         if frames_data:
