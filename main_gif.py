@@ -13,7 +13,7 @@ France.generate_circle_city(cities)
 France.generate_individus()
 
 print("Démarrage de l'animation...")
-anim = France.animate_evolution(generations=5000, method='pmx')
+anim = France.animate_evolution(generations=5000, interval=5, method='hx')
 
 if anim:
     plt.show()

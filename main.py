@@ -17,10 +17,10 @@ fitness_checkpoint = []
 start = time.time()
 i = 0
 
-while time.time() - start < 5:  # Exécuter pendant 5 secondes
+while time.time() - start < 10:
     enfant1, enfant2 = France.croisement(method='pmx')
     if i % 100 == 0:
-        print("Itération:", i)
+        print("Iteration:", i)
         fitness_checkpoint.append(max(indiv.fitness for indiv in France.individus))
     i += 1
 

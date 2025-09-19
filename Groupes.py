@@ -97,27 +97,36 @@ class Groupes:
         return child1, child2
     
     def cx(self, parent1, parent2):
-        n = len(parent1)
-        child1, child2 = [None]*n, [None]*n
-        visited = [False]*n
-        start = 0
+        """Cycle Crossover (CX) standard.
 
+        Alternance de cycles: le premier cycle copie parent1→child1 (et parent2→child2),
+        le cycle suivant inverse, et ainsi de suite. Utilisation d'un mapping O(1).
+        """
+        n = len(parent1)
+        child1, child2 = [None] * n, [None] * n
+        visited = [False] * n
+        pos1 = {gene: i for i, gene in enumerate(parent1)}
+
+        start = 0
+        use_parent1 = True
         while not all(visited):
             idx = start
-            while not visited[idx]:
-                child1[idx] = parent1[idx]
-                child2[idx] = parent2[idx]
-                visited[idx] = True
-                idx = parent1.index(parent2[idx])
-
-            if not all(visited):
-                start = visited.index(False)
-                idx = start
+            if use_parent1:
+                while not visited[idx]:
+                    child1[idx] = parent1[idx]
+                    child2[idx] = parent2[idx]
+                    visited[idx] = True
+                    idx = pos1[parent2[idx]]
+            else:
                 while not visited[idx]:
                     child1[idx] = parent2[idx]
                     child2[idx] = parent1[idx]
                     visited[idx] = True
-                    idx = parent1.index(parent2[idx])
+                    idx = pos1[parent2[idx]]
+
+            if not all(visited):
+                start = visited.index(False)
+                use_parent1 = not use_parent1
 
         return child1, child2
     
@@ -151,6 +160,54 @@ class Groupes:
         return make_child(edges), make_child(edges_copy)
 
     def hx(self, parent1, parent2, distance_matrix):
+        """Heuristic Crossover (HX) selon la définition classique.
+
+        À partir d'un nœud de départ aléatoire, on considère uniquement les deux arêtes
+        sortantes données par les parents (le successeur dans chaque parent) et on choisit
+        la plus courte qui n'introduit pas de cycle (nœud déjà utilisé). Si aucune des deux
+        n'est valide, on choisit un nœud aléatoire parmi les nœuds restants.
+        """
+        n = len(parent1)
+
+        # Pré-calcul des positions pour accès O(1)
+        pos1 = {city: i for i, city in enumerate(parent1)}
+        pos2 = {city: i for i, city in enumerate(parent2)}
+
+        def next_in_parent(p, pos_map, city):
+            i = pos_map[city]
+            return p[(i + 1) % n]
+
+        def choose_next(current, used):
+            # Candidats: successeur dans parent1 et successeur dans parent2
+            c1 = next_in_parent(parent1, pos1, current)
+            c2 = next_in_parent(parent2, pos2, current)
+            candidates = []
+            if c1 not in used:
+                candidates.append(c1)
+            if c2 not in used and c2 != c1:
+                candidates.append(c2)
+            if candidates:
+                return min(candidates, key=lambda c: distance_matrix[current][c])
+            # Sinon: choisir un nœud aléatoire parmi les restants
+            remaining = [c for c in parent1 if c not in used]
+            return random.choice(remaining) if remaining else None
+
+        def make_child():
+            child = []
+            used = set()
+            current = random.choice(parent1)
+            while len(child) < n:
+                child.append(current)
+                used.add(current)
+                nxt = choose_next(current, used)
+                if nxt is None:
+                    break
+                current = nxt
+            return child
+
+        return make_child(), make_child()
+
+    def hx_extended(self, parent1, parent2, distance_matrix):
         n = len(parent1)
 
         # Pré-calcul des positions pour accès O(1)
@@ -189,45 +246,54 @@ class Groupes:
             return child
 
         return make_child(), make_child()
-
     
-    def ox(self, parent1, parent2):
-        n = len(self.villes)
-        cut1, cut2 = sorted(random.sample(range(n), 2))
+    def ox(self, parent1, parent2, cut_points=None):
+        """Order Crossover (OX) conforme à la définition classique.
+
+        - Échange le segment entre deux points de coupe (inclus)
+        - Remplit les positions restantes avec l'ordre de l'autre parent,
+          en démarrant à cut2+1 (avec wrap) et en évitant les duplications.
+
+        Paramètres:
+            parent1, parent2 (list): permutations
+            cut_points (tuple|None): (c1, c2) inclusifs. Si None, choisis aléatoirement.
+        """
+        n = len(parent1)
+        if cut_points is None:
+            cut1, cut2 = sorted(random.sample(range(n), 2))
+        else:
+            cut1, cut2 = cut_points
 
         # création des enfants
         enfant1 = [None] * n
         enfant2 = [None] * n
 
-        # 2. échange des segments
+        # 1) échange des segments inclusifs
         enfant1[cut1:cut2+1] = parent2[cut1:cut2+1]
         enfant2[cut1:cut2+1] = parent1[cut1:cut2+1]
 
-        # 3. remplir tout en évitant les duplications (laisser a null)
-        segment1 = set(enfant1[cut1:cut2+1])
-        segment2 = set(enfant2[cut1:cut2+1])
+        def fill_order(child, donor, c1, c2):
+            # Sequence du donneur en partant de c2+1, wrap-around
+            seq = []
+            i = (c2 + 1) % n
+            while len(seq) < n:
+                seq.append(donor[i])
+                i = (i + 1) % n
+            # Retirer ce qui est déjà placé (le segment)
+            seq = [g for g in seq if g not in child]
+            # Remplir depuis c2+1, en sautant le segment
+            pos = (c2 + 1) % n
+            for g in seq:
+                while c1 <= pos <= c2:
+                    pos = (pos + 1) % n
+                child[pos] = g
+                pos = (pos + 1) % n
+            return child
 
-        for i in range(n):
-            if not (cut1 <= i <= cut2):
-                if parent1[i] not in segment1:
-                    enfant1[i] = parent1[i]
-                if parent2[i] not in segment2:
-                    enfant2[i] = parent2[i]
+        # 2) remplir par l'ordre du parent opposé
+        enfant1 = fill_order(enfant1, parent1, cut1, cut2)
+        enfant2 = fill_order(enfant2, parent2, cut1, cut2)
 
-        # 4. villes manquantes
-        missing1 = [v for v in self.villes if v not in enfant1]
-        missing2 = [v for v in self.villes if v not in enfant2]
-
-        random.shuffle(missing1)
-        random.shuffle(missing2)
-
-        # 5. remplir les trous
-        for i in range(n):
-            if enfant1[i] is None:
-                enfant1[i] = missing1.pop()
-            if enfant2[i] is None:
-                enfant2[i] = missing2.pop()
-        
         return enfant1, enfant2
 
     def croisement(self, method='ox', mutation='feur'):
@@ -333,11 +399,9 @@ class Groupes:
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
-    
-
-    def animate_evolution(self, generations=5000, method='ox'):
-        """Crée une animation qui capture seulement quand le meilleur chemin change"""
         
+    
+    def animate_evolution(self, generations=5000, method='ox', interval=300, pause_ms=2000, repeat=True):
         # Réinitialiser la population
         self.individus = []
         self.generate_individus()
@@ -366,59 +430,81 @@ class Groupes:
         # Créer l'animation après avoir collecté toutes les données
         if frames_data:
             nb_images = len(frames_data)
-            interval = 2000 / nb_images  # 2000ms / nombre d'images
-            print(f"Animation avec {nb_images} images, intervalle: {interval:.1f}ms")
-            
-            # Configuration de la figure
+            print(f"Animation avec {nb_images} images, intervalle: {interval}ms, pause: {pause_ms}ms")
+
+            # Configuration de la figure (éléments statiques pré-calculés)
             fig, ax = plt.subplots(figsize=(10, 8))
-            
-            # Ajouter des copies de la dernière frame pour la pause de 2 secondes
-            nb_frames_pause = int(2000 / interval)  # Nombre de frames pour 2 secondes
-            total_frames = nb_images + nb_frames_pause
-            
-            def animate_frame_with_pause(frame_idx):
-                # Si on est dans la période de pause, utiliser la dernière image
-                if frame_idx >= nb_images:
-                    frame_idx = nb_images - 1
-                
-                ax.clear()
-                ax.set_xlim(-0.1, 1.1)
-                ax.set_ylim(-0.1, 1.1)
-                ax.set_aspect('equal')
-                
-                frame_data = frames_data[frame_idx]
-                ax.set_title(f"Gen {frame_data['generation']} - Distance: {frame_data['distance']:.3f}")
-                ax.grid(True, alpha=0.3)
-                
-                # Afficher les villes
-                villes_coords = list(self.villes.values())
-                x_coords = [coord[0] for coord in villes_coords]
-                y_coords = [coord[1] for coord in villes_coords]
-                ax.scatter(x_coords, y_coords, c='red', s=100, zorder=5)
-                
-                # Tracer le chemin
-                chemin_coords = [self.villes[ville] for ville in frame_data['chemin']]
-                chemin_x = [coord[0] for coord in chemin_coords]
-                chemin_y = [coord[1] for coord in chemin_coords]
-                chemin_x.append(chemin_x[0])  # Fermer le circuit
-                chemin_y.append(chemin_y[0])
-                
-                ax.plot(chemin_x, chemin_y, 'b-', linewidth=2, alpha=0.7)
-                
-                # Point de départ
-                start_coord = self.villes[frame_data['chemin'][0]]
-                ax.scatter(start_coord[0], start_coord[1], c='green', s=150, marker='s', zorder=6)
-            
-            # Créer l'animation avec les frames de pause
-            anim = animation.FuncAnimation(fig, animate_frame_with_pause, frames=total_frames, interval=interval, repeat=True)
-            
+            villes_coords = list(self.villes.values())
+            x_coords = [coord[0] for coord in villes_coords]
+            y_coords = [coord[1] for coord in villes_coords]
+
+            # Définir des marges automatiques basées sur les données
+            xmin, xmax = min(x_coords), max(x_coords)
+            ymin, ymax = min(y_coords), max(y_coords)
+            dx, dy = xmax - xmin, ymax - ymin
+            pad_x = max(dx * 0.1, 0.05)
+            pad_y = max(dy * 0.1, 0.05)
+            ax.set_xlim(xmin - pad_x, xmax + pad_x)
+            ax.set_ylim(ymin - pad_y, ymax + pad_y)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.3)
+
+            # Scatter des villes (statique)
+            cities_scatter = ax.scatter(x_coords, y_coords, c='red', s=100, zorder=5)
+
+            # Line du chemin (dynamique)
+            # Initialiser avec la première frame
+            first = frames_data[0]
+            chemin_coords = [self.villes[ville] for ville in first['chemin']]
+            chemin_x = [c[0] for c in chemin_coords] + [chemin_coords[0][0]]
+            chemin_y = [c[1] for c in chemin_coords] + [chemin_coords[0][1]]
+            (line_path,) = ax.plot(chemin_x, chemin_y, 'b-', linewidth=2, alpha=0.7)
+
+            # Point de départ (dynamique)
+            start_coord = self.villes[first['chemin'][0]]
+            start_scatter = ax.scatter([start_coord[0]], [start_coord[1]], c='green', s=150, marker='s', zorder=6)
+
+            # Texte informatif (dynamique)
+            info_text = ax.text(0.02, 0.98, f"Gen {first['generation']} - Distance: {first['distance']:.3f}",
+                                transform=ax.transAxes, va='top', ha='left', fontsize=12,
+                                bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='gray', alpha=0.7))
+
+            def get_path_xy(chemin):
+                coords = [self.villes[ville] for ville in chemin]
+                xs = [c[0] for c in coords] + [coords[0][0]]
+                ys = [c[1] for c in coords] + [coords[0][1]]
+                return xs, ys
+
+            def update(frame_idx):
+                frame = frames_data[frame_idx]
+                xs, ys = get_path_xy(frame['chemin'])
+                line_path.set_data(xs, ys)
+
+                sc_x, sc_y = self.villes[frame['chemin'][0]]
+                # set_offsets attend un array Nx2
+                start_scatter.set_offsets([[sc_x, sc_y]])
+
+                info_text.set_text(f"Gen {frame['generation']} - Distance: {frame['distance']:.3f}")
+
+                return line_path, start_scatter, info_text
+
+            # Animation fluide avec blit et pause entre boucles
+            anim = animation.FuncAnimation(
+                fig,
+                update,
+                frames=nb_images,
+                interval=interval,
+                blit=True,
+                repeat=repeat,
+                repeat_delay=pause_ms,
+            )
+
             try:
-                # Sauvegarder
                 anim.save("evolution_tsp.gif", writer='pillow')
                 print("Animation sauvegardée: evolution_tsp.gif")
             except Exception as e:
                 print(f"Erreur lors de la sauvegarde: {e}")
-            
+
             return anim
         else:
             print("Aucune amélioration détectée!")
